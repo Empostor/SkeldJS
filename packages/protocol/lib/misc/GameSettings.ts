@@ -788,7 +788,7 @@ export class GameSettings {
         const errors: string[] = [];
 
         // Numeric range validations
-        const ranges: [string, number, number, number | undefined][] = [
+        const ranges: [string, number, number, number][] = [
             ["maxPlayers",          settings.maxPlayers ?? 10,          4,   15],
             ["playerSpeed",         settings.playerSpeed ?? 1,          0.5, 3.0],
             ["crewmateVision",      settings.crewmateVision ?? 1,       0.0, 5.0],
