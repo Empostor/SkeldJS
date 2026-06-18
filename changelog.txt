@@ -1,3 +1,13 @@
+fix: add missing Language field to GameListing serialization
+
+=== [FIX] UDP GameListing missing Language (packages/protocol/lib/misc/GameListing.ts) ===
+  - Among Us client DeserializeV2 reads Language (uint32, 4 bytes) at the end
+    of the game listing binary format, after Platform tag + HostPlatformName.
+  - SkeldJS serializeToWriter was missing this field, causing the client to read
+    garbage bytes for the Language/GameKeywords.
+  - Added language: number = 0 parameter to constructor, serialize (writer.uint32),
+    and deserialize (reader.uint32).
+
 feat: add game options validation, role behavior hooks, Hide & Seek flow, and missing API events
 
 === Game Options Validation (packages/protocol/lib/misc/GameSettings.ts) ===
