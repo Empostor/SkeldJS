@@ -32,6 +32,7 @@ import {
     SetRoleMessage,
     SetSkinMessage,
     SetStartCounterMessage,
+    SetScanner,
     SetVisorMessage,
     ShapeshiftMessage,
     SpawnMessage,
@@ -311,6 +312,7 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
             case RpcMessageTag.SendChat: return SendChatMessage.deserializeFromReader(reader);
             case RpcMessageTag.StartMeeting: return StartMeetingMessage.deserializeFromReader(reader);
             case RpcMessageTag.SetStartCounter: return SetStartCounterMessage.deserializeFromReader(reader);
+            case RpcMessageTag.SetScanner: return SetScanner.deserializeFromReader(reader);
             case RpcMessageTag.UsePlatform: return UsePlatformMessage.deserializeFromReader();
             case RpcMessageTag.SendQuickChat: return SendQuickChatMessage.deserializeFromReader(reader);
             case RpcMessageTag.SetLevel: return SetLevelMessage.deserializeFromReader(reader);
@@ -350,6 +352,7 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
         if (rpc instanceof SendChatMessage) await this._handleSendChat(rpc);
         if (rpc instanceof StartMeetingMessage) await this._handleStartMeeting(rpc);
         if (rpc instanceof SetStartCounterMessage) await this._handleSetStartCounter(rpc);
+        if (rpc instanceof SetScanner) await this._handleSetScanner(rpc);
         if (rpc instanceof UsePlatformMessage) await this._handleUsePlatform(rpc);
         if (rpc instanceof SendQuickChatMessage) await this._handleSendQuickChat(rpc);
         if (rpc instanceof SetLevelMessage) await this._handleSetLevel(rpc);
@@ -765,7 +768,7 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
             )
         );
 
-        if (!ev.canceled) {
+        if (!ev.canceled && this.room.canManageObject(this)) {
             this.startMeetingWithAuth(ev.alteredBody, this.player);
         }
     }
@@ -789,6 +792,12 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
     
 
     private async _handleStartMeeting(rpc: StartMeetingMessage) {
+        // If a meeting is already in progress (MeetingHud exists), this is a
+        // duplicate StartMeeting from the host client responding to the
+        // ReportDeadBody broadcast. The server authority already started the meeting.
+        if (this.room.meetingHud)
+            return;
+
         const reportedBody = rpc.bodyId === 0xff
             ? "emergency"
             : this.room.getPlayerByPlayerId(rpc.bodyId) || "emergency";
@@ -813,6 +822,8 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
         if (callerPlayerId === undefined)
             return;
 
+        if (this.room.meetingHud)
+            return;
 
         const spawnMeetingHud = await this.room.createObjectOfType(
             SpawnType.MeetingHud,
@@ -1153,6 +1164,12 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
             this.room.startGameCounter = ev.alteredCounter;
         }
         this._rpcSetStartCounter(ev.alteredCounter);
+    }
+
+    private async _handleSetScanner(rpc: SetScanner) {
+        // SetScanner is a client-side cosmetic RPC for the medbay scan.
+        // The RPC is broadcast to all clients by the server; no server-side
+        // processing is required.
     }
 
     private async _handleUsePlatform(rpc: UsePlatformMessage) {
