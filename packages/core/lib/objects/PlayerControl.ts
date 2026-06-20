@@ -2192,10 +2192,11 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
         }
 
         // Kill cooldown check — prevents rapid-fire kills.
-        // Uses the configured killCooldown (in seconds). First kill is always
-        // allowed (lastMurderTime defaults to 0 on game start).
+        // Uses half the kill cooldown as tolerance, matching Impostor's
+        // CanMurder which accounts for GuardianAngel protection desyncs.
+        // First kill always allowed (lastMurderTime defaults to 0).
         const killCooldownSec = this.room.settings.killCooldown || 45;
-        const cooldownMs = killCooldownSec * 1000;
+        const cooldownMs = (killCooldownSec * 1000) / 2;
         const lastMurder = murdererPlayerInfo.lastMurderTime || 0;
         if (lastMurder > 0) {
             const elapsed = Date.now() - lastMurder;
