@@ -779,11 +779,11 @@ export abstract class StatefulRoom<RoomType extends StatefulRoom = StatefulRoom<
      */
     async handleEndGame(reason: GameOverReason) {
         this.gameState = GameState.Ended;
-        // Do NOT despawn PlayerInfo here. The Among Us client needs
+        // Do NOT despawn components here. The Among Us client needs
         // GameData.Instance.AllPlayers (the live PlayerInfo array) to be
         // populated when it processes the EndGameMessage — it reads each
         // player's role to build the end game winner list.
-        // PlayerInfo cleanup happens in _reset() when the next game starts.
+        // Cleanup happens in _reset() when the next game starts.
         await this.emit(new RoomGameEndedEvent(this, reason));
     }
 
