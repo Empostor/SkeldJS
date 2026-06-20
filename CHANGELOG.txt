@@ -1,0 +1,11 @@
+
+## 额外修复 (2026-06-20)
+
+### PlayerControl.ts — 击杀冷却与防友伤
+- canMurder(): 添加击杀冷却检查 (killCooldown/2)，对齐 Impostor CanMurder
+- canMurder(): 添加 Imp 杀 Imp 检查，对齐 Impostor ValidateMurderPlayer
+- murderPlayerWithAuth(): 记录 lastMurderTime 时间戳
+- murderPlayerWithAuth(): 成功击杀时无条件清除目标 GuardianAngel 保护状态
+
+### NetworkedPlayerInfo.ts — 击杀时间戳
+- 新增 lastMurderTime: number 字段
