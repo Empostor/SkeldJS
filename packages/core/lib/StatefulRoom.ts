@@ -779,16 +779,14 @@ export abstract class StatefulRoom<RoomType extends StatefulRoom = StatefulRoom<
         this.gameState = GameState.Ended;
         // Do NOT clear this.players — lobby connections must persist across games.
         // Waterway's design keeps players in the room between game rounds.
-        if (this.isAuthoritative) {
-            for (const [, component] of this.networkedObjects) {
-                this.despawnComponent(component);
-            }
-            // Reset player states instead of clearing PlayerInfo entirely.
-            // This prevents Ghost state and phantom players from persisting.
-            for (const [, playerInfo] of this.playerInfo) {
-                playerInfo.setDead(false);
-                playerInfo.setDisconnected(false);
-            }
+        for (const [, component] of this.networkedObjects) {
+            this.despawnComponent(component);
+        }
+        // Reset player states in both authoritative and player-host modes.
+        // Stale dead/disconnected flags cause ghost players and incorrect counts.
+        for (const [, playerInfo] of this.playerInfo) {
+            playerInfo.setDead(false);
+            playerInfo.setDisconnected(false);
         }
         await this.emit(new RoomGameEndedEvent(this, reason));
     }
