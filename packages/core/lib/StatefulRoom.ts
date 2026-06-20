@@ -952,11 +952,20 @@ export abstract class StatefulRoom<RoomType extends StatefulRoom = StatefulRoom<
 
         let object!: NetworkedObject<this>;
 
+        // Check for duplicate NetIDs before creating any components.
+        // If any NetID in the prefab already exists, skip the entire spawn.
+        // The host client may re-send spawns when syncing lobby state to a
+        // new player — silently ignoring duplicates is safe.
+        for (let i = 0; i < netIds.length; i++) {
+            if (this.networkedObjects.get(netIds[i])) {
+                return null as any; // Entire prefab already spawned, skip
+            }
+        }
+
+        let object!: NetworkedObject<this>;
+
         for (let i = 0; i < componentPrefab.length; i++) {
             const netId = netIds[i];
-
-            if (this.networkedObjects.get(netId))
-                throw new Error("Duplicate NetID: " + netId);
 
             const component = new componentPrefab[i](
                 this,
