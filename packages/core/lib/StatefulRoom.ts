@@ -777,13 +777,19 @@ export abstract class StatefulRoom<RoomType extends StatefulRoom = StatefulRoom<
      */
     async handleEndGame(reason: GameOverReason) {
         this.gameState = GameState.Ended;
-        // Do NOT clear this.players — lobby connections must persist across games.
-        // Waterway's design keeps players in the room between game rounds.
+        // Do NOT despawning PlayerInfo immediately — clients need it to
+        // display the end game screen (winner list with roles revealed).
+        // Only despawn non-PlayerInfo objects (ShipStatus, MeetingHud, etc.).
         for (const [, component] of this.networkedObjects) {
+            if (component.spawnType === SpawnType.PlayerInfo) {
+                // Keep PlayerInfo alive so clients can read role data for
+                // the end game screen. Will be cleaned up on next _reset().
+                continue;
+            }
             this.despawnComponent(component);
         }
-        // Reset player states in both authoritative and player-host modes.
-        // Stale dead/disconnected flags cause ghost players and incorrect counts.
+        // Reset player dead/disconnected flags so they're ready for next game,
+        // but keep roleType so the end game screen can show who was the impostor.
         for (const [, playerInfo] of this.playerInfo) {
             playerInfo.setDead(false);
             playerInfo.setDisconnected(false);
