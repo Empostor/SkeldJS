@@ -391,26 +391,28 @@ export abstract class StatefulRoom<RoomType extends StatefulRoom = StatefulRoom<
     }
 
     async flushEndGameIntents() {
+        // Skip if game has already ended (prevents double-processing when
+        // both server-side detection and host-client EndGameMessage fire).
+        if (this.gameState !== GameState.Started) return;
+
         if (this.endGameIntents.length > 0) {
             const endGameIntents = this.endGameIntents;
             this.endGameIntents = [];
-            if (this.isAuthoritative) {
-                for (let i = 0; i < endGameIntents.length; i++) {
-                    const intent = endGameIntents[i];
-                    const ev = await this.emit(new RoomEndGameIntentEvent(
-                        this,
-                        intent,
-                    ));
+            for (let i = 0; i < endGameIntents.length; i++) {
+                const intent = endGameIntents[i];
+                const ev = await this.emit(new RoomEndGameIntentEvent(
+                    this,
+                    intent,
+                ));
 
-                    if (ev.canceled) {
-                        endGameIntents.splice(i, 1);
-                        i--;
-                    }
+                if (ev.canceled) {
+                    endGameIntents.splice(i, 1);
+                    i--;
                 }
+            }
 
-                if (endGameIntents[0]) {
-                    await this.endGame(endGameIntents[0].reason, endGameIntents[0]);
-                }
+            if (endGameIntents[0]) {
+                await this.endGame(endGameIntents[0].reason, endGameIntents[0]);
             }
         }
     }
@@ -777,23 +779,11 @@ export abstract class StatefulRoom<RoomType extends StatefulRoom = StatefulRoom<
      */
     async handleEndGame(reason: GameOverReason) {
         this.gameState = GameState.Ended;
-        // Do NOT despawning PlayerInfo immediately — clients need it to
-        // display the end game screen (winner list with roles revealed).
-        // Only despawn non-PlayerInfo objects (ShipStatus, MeetingHud, etc.).
-        for (const [, component] of this.networkedObjects) {
-            if (component.spawnType === SpawnType.PlayerInfo) {
-                // Keep PlayerInfo alive so clients can read role data for
-                // the end game screen. Will be cleaned up on next _reset().
-                continue;
-            }
-            this.despawnComponent(component);
-        }
-        // Reset player dead/disconnected flags so they're ready for next game,
-        // but keep roleType so the end game screen can show who was the impostor.
-        for (const [, playerInfo] of this.playerInfo) {
-            playerInfo.setDead(false);
-            playerInfo.setDisconnected(false);
-        }
+        // Do NOT despawn PlayerInfo here. The Among Us client needs
+        // GameData.Instance.AllPlayers (the live PlayerInfo array) to be
+        // populated when it processes the EndGameMessage — it reads each
+        // player's role to build the end game winner list.
+        // PlayerInfo cleanup happens in _reset() when the next game starts.
         await this.emit(new RoomGameEndedEvent(this, reason));
     }
 
