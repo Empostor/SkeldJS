@@ -13,6 +13,7 @@ import {
     MurderPlayerMessage,
     PlayerControlDataMessage,
     PlayerControlSpawnDataMessage,
+    PlayAnimationMessage,
     ProtectPlayerMessage,
     QuickChatComplexMessageData,
     QuickChatMessageData,
@@ -301,6 +302,7 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
 
     parseRemoteCall(rpcTag: RpcMessageTag, reader: HazelReader): BaseRpcMessage | undefined {
         switch (rpcTag) {
+            case RpcMessageTag.PlayAnimation: return PlayAnimationMessage.deserializeFromReader(reader);
             case RpcMessageTag.CompleteTask: return CompleteTaskMessage.deserializeFromReader(reader);
             case RpcMessageTag.SyncSettings: return SyncSettingsMessage.deserializeFromReader(reader);
             case RpcMessageTag.CheckName: return CheckNameMessage.deserializeFromReader(reader);
@@ -310,6 +312,7 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
             case RpcMessageTag.ReportDeadBody: return ReportDeadBodyMessage.deserializeFromReader(reader);
             case RpcMessageTag.MurderPlayer: return MurderPlayerMessage.deserializeFromReader(reader);
             case RpcMessageTag.SendChat: return SendChatMessage.deserializeFromReader(reader);
+            case RpcMessageTag.SendChatNote: return SendChatNoteMessage.deserializeFromReader(reader);
             case RpcMessageTag.StartMeeting: return StartMeetingMessage.deserializeFromReader(reader);
             case RpcMessageTag.SetStartCounter: return SetStartCounterMessage.deserializeFromReader(reader);
             case RpcMessageTag.SetScanner: return SetScanner.deserializeFromReader(reader);
@@ -341,6 +344,7 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
     }
 
     async handleRemoteCall(rpc: BaseRpcMessage) {
+        if (rpc instanceof PlayAnimationMessage) await this._handlePlayAnimation(rpc);
         if (rpc instanceof CompleteTaskMessage) await this._handleCompleteTask(rpc);
         if (rpc instanceof SyncSettingsMessage) await this._handleSyncSettings(rpc);
         if (rpc instanceof CheckNameMessage) await this._handleCheckName(rpc);
@@ -350,6 +354,7 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
         if (rpc instanceof ReportDeadBodyMessage) await this._handleReportDeadBody(rpc);
         if (rpc instanceof MurderPlayerMessage) await this._handleMurderPlayer(rpc);
         if (rpc instanceof SendChatMessage) await this._handleSendChat(rpc);
+        if (rpc instanceof SendChatNoteMessage) await this._handleSendChatNote(rpc);
         if (rpc instanceof StartMeetingMessage) await this._handleStartMeeting(rpc);
         if (rpc instanceof SetStartCounterMessage) await this._handleSetStartCounter(rpc);
         if (rpc instanceof SetScanner) await this._handleSetScanner(rpc);
@@ -393,6 +398,17 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
                 playerInfo.taskStates[rpc.taskIdx]
             )
         );
+    }
+
+    private async _handlePlayAnimation(rpc: PlayAnimationMessage) {
+        // PlayAnimation is sent by clients when performing task animations
+        // (e.g., swipe card, scan). No server-side logic needed — just validate
+        // and allow the broadcast to other clients so they see the animation.
+        const playerInfo = this.getPlayerInfo();
+        if (!playerInfo) return;
+
+        // Nothing to validate — the task animation can play regardless.
+        // The client handles animation states locally.
     }
 
     private _completeTask(taskIdx: number) {
@@ -769,6 +785,10 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
         );
 
         if (!ev.canceled && this.room.canManageObject(this)) {
+            // In SaaH mode, server handles meeting start directly.
+            // Prevent the original ReportDeadBody from being broadcast to avoid
+            // clients triggering their own meeting flow — the server sends
+            // StartMeeting instead which is the authoritative meeting trigger.
             this.startMeetingWithAuth(ev.alteredBody, this.player);
         }
     }
@@ -976,11 +996,25 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
         const characterControl = victim.characterControl;
         if (!characterControl) return;
 
+        // Record kill time for cooldown enforcement
+        const murdererInfo = this.getPlayerInfo();
+        if (murdererInfo) {
+            murdererInfo.lastMurderTime = Date.now();
+        }
+
         if (characterControl.protectedByGuardian) {
             this._rpcMurderPlayer(victim, MurderReasonFlags.DecisionByHost | MurderReasonFlags.FailedProtected);
             await characterControl._removeProtection(ProtectionRemoveReason.MurderAttempt);
             return;
         }
+
+        // Clear any residual protection on the victim (matching Impostor behavior
+        // which always clears ProtectedOn in ForceMurderPlayerAsync)
+        if (characterControl.protectedByGuardian) {
+            await characterControl._removeProtection(ProtectionRemoveReason.MurderAttempt);
+        }
+        characterControl.protectedByGuardian = false;
+        characterControl.guardianProtector = undefined;
 
         await characterControl.causeToDie("murder");
 
@@ -1078,6 +1112,14 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
             )
         );
         this._rpcSendChat(message);
+    }
+
+    private async _handleSendChatNote(rpc: SendChatNoteMessage) {
+        // SendChatNote is used for in-game chat notifications, e.g.:
+        // - Player has voted (ChatNoteType.DidVote)
+        // - Dead body reported indicator
+        // Like PlayAnimation, this is primarily a broadcast passthrough.
+        // The server just validates and allows the broadcast.
     }
 
     private _rpcSendChatNote(player: Player<RoomType>, type: ChatNoteType) {
@@ -2146,6 +2188,20 @@ export class PlayerControl<RoomType extends StatefulRoom> extends NetworkedObjec
         const victimPlayerInfo = victim.getPlayerInfo();
 
         if (murdererPlayerInfo?.isDead || !murdererPlayerInfo?.roleType || murdererPlayerInfo?.roleType.roleMetadata.roleTeam !== RoleTeamType.Impostor || murdererPlayerInfo?.isDisconnected) {
+            return false;
+        }
+
+        // Kill cooldown check — prevents rapid-fire kills.
+        // Uses half the kill cooldown as a tolerance (matching Impostor's
+        // CanMurder check which accounts for GuardianAngel protection desyncs).
+        const cooldownMs = (this.room.settings.killCooldown * 1000) / 2;
+        const timeSinceLastMurder = Date.now() - (murdererPlayerInfo.lastMurderTime || 0);
+        if (timeSinceLastMurder < cooldownMs) {
+            return false;
+        }
+
+        // Cannot kill other Impostors (prevents team-kills).
+        if (victimPlayerInfo?.roleType?.roleMetadata.roleTeam === RoleTeamType.Impostor) {
             return false;
         }
 
