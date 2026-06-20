@@ -950,8 +950,6 @@ export abstract class StatefulRoom<RoomType extends StatefulRoom = StatefulRoom<
         if (componentPrefab.length === 0) throw new Error("Invalid spawn prefab, 0 components");
         if (netIds.length !== componentPrefab.length) throw new Error("Expected " + componentPrefab.length + " net ids, got " + netIds.length);
 
-        let object!: NetworkedObject<this>;
-
         // Check for duplicate NetIDs before creating any components.
         // If any NetID in the prefab already exists, skip the entire spawn.
         // The host client may re-send spawns when syncing lobby state to a
